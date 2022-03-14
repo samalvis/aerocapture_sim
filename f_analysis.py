@@ -108,6 +108,7 @@ def main():
     plt.hist(f_dist, len(optimal_solution_arr))  # Could be prettier and centered...
     plt.show()
 
+
 if __name__ == "__main__":
     main()
 

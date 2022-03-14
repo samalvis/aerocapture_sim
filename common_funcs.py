@@ -7,6 +7,7 @@ from scipy import optimize as opt
 import matplotlib.pyplot as plt
 import time
 import pickle
+import copy
 
 
 # CLASSES ##############################################################################################################
@@ -65,48 +66,69 @@ class Body:
 
         return
 
+    def load_density_info2(self, file_name):
+        """Description"""
+        data = np.loadtxt(file_name, skiprows=1, delimiter=' ')
+
+        alt_table = data[:, 1]
+        density_table = np.multiply(data[:, 2], data[:, 3])
+        self.alt_density_table = np.vstack((alt_table, density_table))
+
+        self.scale_height = np.mean(data[:, 2])  # NOTE: is this reasonable?
+        self.scale_density = density_table[0]
+
+        return
+
 
 class Craft:
     """Description"""
     t_eject = 0
     beta_i = 0  # TODO: UNITS????
     beta_f = 0  # TODO: make beta a function with t as an input! simplifies behavior in other parts
+    x_0 = []
 
 
 class Output:
     """Description"""
     body_obj = Body()
     craft_obj = Craft()
-    U_0 = 0  # TODO: make this just store x_0 and pull from it elsewhere?
-    gamma_0 = 0
-    t = 0
-    r = 0
-    v = 0
-    h = 0
-    E = 0
+    t = []
+    r = []
+    v = []
+    h = []
+    E = []
     a_t = []
     a_dot_t = []
     rho = 0
     P_dyn = 0
     hasImpacted = 0
     hasCaptured = 0
-    p_f = 0  # TODO: remove, this shouldn't matter anymore
-    a_f = 0  # TODO: remove, this shouldn't matter anymore
 
 
-def save_outputs(output_list, filename):  # TODO: literally zero security here lol
+def prep_output_file(filename):
     """"""
-    file = open(filename, "wb")
-    pickle.dump(output_list, file)
+    file = open(filename, "wb")  # TODO: should probably have a check if it exists or something along those lines
+    file.close()
+
+
+def save_output(output, filename):  # TODO: literally zero security here lol
+    """"""
+    file = open(filename, "ab")
+    pickle.dump(output, file)
     file.close()
 
 
 def load_outputs(filename):
     """"""
     file = open(filename, "rb")
-    loaded_list = pickle.load(file)
+    loaded_list = []
+    while 1:
+        try:
+            loaded_list.append(pickle.load(file))
+        except EOFError:
+            break
     file.close()
-    return loaded_list
+    return np.array(loaded_list).flatten()
 
 
 # Rotation Matrix Functions ############################################################################################
@@ -340,11 +362,8 @@ def orbit_sim(x_0, body_obj, craft_obj, run_time=3600., time_res=60., method='DO
     lam_impact.terminal = True
 
     # Run ODE
-    tic2 = time.perf_counter()
     solution = integrate.solve_ivp(ode_fun_two_body, (0, run_time), x_0, method=method, t_eval=times,
-                                   rtol=1E-13, atol=1E-13, events=lam_impact)  # TODO: restore DOP853?
-    toc2 = time.perf_counter()
-    print(f"ODE: {toc2-tic2}")  # TODO: remove this!
+                                   rtol=1E-10, atol=1E-10, events=lam_impact)  # TODO: restore DOP853?
 
     # Analyze ODE Output
     t_arr = solution.t
@@ -374,8 +393,7 @@ def orbit_sim(x_0, body_obj, craft_obj, run_time=3600., time_res=60., method='DO
     ans = Output()
     ans.body_obj = body_obj
     ans.craft_obj = craft_obj
-    ans.U_0 = x_0[3]
-    ans.gamma_0 = x_0[4]
+    ans.craft_obj.x_0 = x_0  # TODO: this should happen in the set up, make more streamlined
     ans.t = t_arr
     ans.r = r_arr
     ans.v = v_arr
@@ -475,11 +493,11 @@ def plot_case(ans):  # TODO: unable to format set_ylabel to get titles nice (kee
     ax4.axvline(x = t_eject, color = 'r', label = 'axvline - full height')
 
     if ans.hasImpacted:
-        fig2.suptitle(f"U_0 = {round(ans.U_0, 3)} km/s; gamma_0 = {round(math.degrees(ans.gamma_0), 3)} deg; Status = Impacted")
+        fig2.suptitle(f"U_0 = {round(ans.craft_obj.x_0[3], 3)} km/s; gamma_0 = {round(math.degrees(ans.craft_obj.x_0[4]), 3)} deg; Status = Impacted")
     elif ans.hasCaptured:
-        fig2.suptitle(f"U_0 = {round(ans.U_0, 3)} km/s; gamma_0 = {round(math.degrees(ans.gamma_0), 3)} deg; Status = Captured; ap_f = {round(ans.a_t[-1] - body_obj.R, 1)} km alt")
+        fig2.suptitle(f"U_0 = {round(ans.craft_obj.x_0[3], 3)} km/s; gamma_0 = {round(math.degrees(ans.craft_obj.x_0[4]), 3)} deg; Status = Captured; ap_f = {round(ans.a_t[-1] - body_obj.R, 1)} km alt")
     else:
-        fig2.suptitle(f"U_0 = {round(ans.U_0, 3)} km/s; gamma_0 = {round(math.degrees(ans.gamma_0), 3)} deg; Status = Escaped")
+        fig2.suptitle(f"U_0 = {round(ans.craft_obj.x_0[3], 3)} km/s; gamma_0 = {round(math.degrees(ans.craft_obj.x_0[4]), 3)} deg; Status = Escaped")
 
     plt.show()
 
@@ -545,8 +563,6 @@ def eject_calc_2(a_f_targ, x_0, body_obj, craft_obj):
         err = a_f_targ - solution.a_t[-1]
         count = count + 1
 
-    print(count)
-    print(err)
     return solution
 
 
@@ -577,10 +593,11 @@ def eject_calc(a_f_targ, x_0, Mars, SC):
     upper = run_time
     lower = 0
     err = 100
-    err_tol = 1e-6
+    err_tol = 0.01  # acceptable error (km) from target apoapsis
+                    # NOTE: must be small so that time error converges consistently! (?)
     solution = 0
     count = 0
-    while (abs(err) > err_tol) & (count < 10):  # TODO: make this count a parameter!
+    while (abs(err) > err_tol) and (count <= 25):
         solution = orbit_sim(x_0, Mars, SC, run_time=run_time, time_res=time_res, method='RK45')
         err = a_f_targ - solution.a_t[-1]
         if err < 0:
@@ -593,8 +610,42 @@ def eject_calc(a_f_targ, x_0, Mars, SC):
             SC.t_eject = (SC.t_eject + lower)/2
         count = count + 1
 
-    print(count)
-    print(err)
+    return solution
+
+
+def EFPA_calc(a_f_targ, x_0, body_obj, craft_obj):
+    """Description"""
+    # start EFPA at zero
+    EFPA = 0
+    x_0[4] = math.radians(EFPA)
+    solution1 = copy.deepcopy(eject_calc(a_f_targ, x_0, body_obj, craft_obj))
+    solution2 = 0
+
+    # step down by degrees until t_j before max dynamic pressure (what about imapct?)
+    while EFPA > -90:  # TODO: make a more stable escape condition
+        EFPA = EFPA-1
+        x_0[4] = math.radians(EFPA)
+        solution2 = copy.deepcopy(eject_calc(a_f_targ, x_0, body_obj, craft_obj))
+        if solution2.craft_obj.t_eject < solution2.t[np.argmax(solution2.P_dyn)]:
+            break
+
+        solution1 = copy.deepcopy(solution2)
+
+    # bisect inward to find solution
+    err = 1000
+    err_max = 15  # within 15 s (parameter)  # TODO: explore weird behavior here?
+    solution = 0
+    count = 0
+    while (abs(err) > err_max) and (count <= 6):
+        x_0[4] = (solution1.craft_obj.x_0[4] + solution2.craft_obj.x_0[4]) / 2
+        solution = eject_calc(a_f_targ, x_0, body_obj, craft_obj)
+        err = solution.craft_obj.t_eject - solution.t[np.argmax(solution.P_dyn)]
+        if err < 0:
+            solution2 = copy.deepcopy(solution)
+        else:
+            solution1 = copy.deepcopy(solution)
+        count = count + 1
+
     return solution
 
 
