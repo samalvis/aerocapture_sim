@@ -33,23 +33,26 @@ def main():
     SC.x_0[4] = math.radians(-9.875)
 
     # load linear distributions
-    lin_sols = gen_lin_atm(0.01, 0.75, 1.25, "test5", a_f_targ, Mars, SC)
-    # lin_sols = load_lin_atm("test5")
+    # lin_sols = gen_lin_atm(0.01, 0.75, 1.25, "test5", a_f_targ, Mars, SC)
+    lin_sols = load_lin_atm("test1_fix")
 
     # run through linear variations and plot a/a_dot
     a_arr = []
     a_dot_arr = []
     for lin_sol in lin_sols:
+        print(lin_sol.craft_obj.t_eject, lin_sol.body_obj.scale_factor)
         t_step_star = lin_sol.t[1] - lin_sol.t[0]
         a_arr.append(lin_sol.a_t[int(math.floor(lin_sol.craft_obj.t_eject / t_step_star))])
         a_dot_arr.append(lin_sol.a_dot_t[int(lin_sol.craft_obj.t_eject)])
 
     print(a_arr)
     print(a_dot_arr)
-    plt.plot(a_arr, a_dot_arr, 'o-')
+    plt.scatter(a_arr, a_dot_arr)
     for idx in range(len(a_arr)):
         plt.annotate(f"{idx}", (a_arr[idx]+2, a_dot_arr[idx]-0.02))
 
+    plt.xlabel("a")
+    plt.ylabel("a_dot")
     plt.show()
 
 if __name__ == "__main__":

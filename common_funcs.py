@@ -418,7 +418,7 @@ def orbit_sim(x_0, body_obj, craft_obj, run_time=3600., time_res=60., method='DO
 
     ans.a_dot_t = np.zeros(len(ans.a_t))
     for idx in range(len(ans.a_t) - 1):  # NOTE: rough linear approximation of a_dot!
-        ans.a_dot_t[idx + 1] = (ans.a_t[idx + 1] - ans.a_t[idx]) / (ans.t[idx + 1] - ans.a_t[idx])
+        ans.a_dot_t[idx + 1] = (ans.a_t[idx + 1] - ans.a_t[idx]) / (ans.t[idx + 1] - ans.t[idx])
 
     return ans
 
@@ -626,7 +626,7 @@ def EFPA_calc(a_f_targ, x_0, body_obj, craft_obj):
         EFPA = EFPA-1
         x_0[4] = math.radians(EFPA)
         solution2 = copy.deepcopy(eject_calc(a_f_targ, x_0, body_obj, craft_obj))
-        if solution2.craft_obj.t_eject < solution2.t[np.argmax(solution2.P_dyn)]:
+        if solution2.craft_obj.t_eject < solution2.t[np.argmax(solution2.rho)]:
             break
 
         solution1 = copy.deepcopy(solution2)
@@ -639,7 +639,7 @@ def EFPA_calc(a_f_targ, x_0, body_obj, craft_obj):
     while (abs(err) > err_max) and (count <= 6):
         x_0[4] = (solution1.craft_obj.x_0[4] + solution2.craft_obj.x_0[4]) / 2
         solution = eject_calc(a_f_targ, x_0, body_obj, craft_obj)
-        err = solution.craft_obj.t_eject - solution.t[np.argmax(solution.P_dyn)]
+        err = solution.craft_obj.t_eject - solution.t[np.argmax(solution.rho)]  # using maximum density vs pressure?
         if err < 0:
             solution2 = copy.deepcopy(solution)
         else:
